@@ -1,12 +1,12 @@
 """ REST API handler for the server. """
-from datetime import datetime
+import json
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ValidationError
 from server.configuration import Settings
 from server.database import Database
 from server.mqtt_handler import MQTTHandler
-import json
 
 router = APIRouter()
 
@@ -30,11 +30,9 @@ class RestHandler:
                 packet_dict = packet.dict()
 
                 # Store in database
-                timestamp = datetime.utcnow().timestamp()
                 message_id = await self.db.insert_mqtt_message(
                     self.settings.MQTT_PUBLISH_TOPIC,
-                    json.dumps(packet_dict),
-                    timestamp
+                    json.dumps(packet_dict)
                 )
 
                 # Publish to MQTT
@@ -93,14 +91,14 @@ class RestHandler:
                 params.append(limit)
 
                 messages = await self.db.fetch(query, *params)
-                
+
                 return {
                     "messages": [
                         {
                             "id": msg["id"],
                             "topic": msg["topic"],
                             "payload": json.loads(msg["payload"]),
-                            "timestamp": msg["timestamp"]
+                            "timestamp": datetime.fromtimestamp(msg["timestamp"], tz=timezone.utc).astimezone().strftime('%Y-%m-%d %H:%M:%S')
                         } for msg in messages
                     ],
                     "total_count": len(messages)

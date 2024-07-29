@@ -1,15 +1,27 @@
-.PHONY: setup start test clean install reinstall init_db
+.PHONY: setup start stop test clean reinstall init_db
+
+PORT = 8000
 
 setup:
 	python3 -m venv venv
 	. venv/bin/activate && pip install -r requirements.txt
 
 start:
-	. venv/bin/activate && python3 -m uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
+	@echo "Checking if port $(PORT) is in use..."
+	@lsof -i :$(PORT) || true
+	@if lsof -i :$(PORT) > /dev/null; then \
+		echo "Port $(PORT) is in use. Attempting to free it..."; \
+		lsof -ti :$(PORT) | xargs kill -9; \
+		sleep 1; \
+	fi
+	@echo "Starting the server..."
+	. venv/bin/activate && python3 run.py
 
 stop:
-	pgrep -f "uvicorn server.main:app" | xargs kill -9
-	# lsof -i :8000 | grep LISTEN | awk '{print $2}' | xargs kill -9
+	@echo "Stopping the server..."
+	@pkill -f "python3 run.py" || echo "No running server found."
+	@echo "Ensuring port $(PORT) is free..."
+	@lsof -ti :$(PORT) | xargs kill -9 || true
 
 test:
 	. venv/bin/activate && pytest

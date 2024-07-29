@@ -1,4 +1,4 @@
-# import asyncio
+from datetime import datetime
 import aiosqlite
 import asyncpg
 from server.configuration import Settings
@@ -110,8 +110,10 @@ class Database:
             except Exception as e:
                 logger.error(f"Error fetching row from PostgreSQL database: {e}")
                 raise
-
-    async def insert_mqtt_message(self, topic: str, payload: str, timestamp: float):
+    
+    async def insert_mqtt_message(self, topic: str, payload: str):
+        # Get the current UTC timestamp
+        timestamp = datetime.utcnow().timestamp()
         if self.settings.DB_TYPE == 'sqlite':
             query = """
             INSERT INTO mqtt_messages (topic, payload, timestamp)

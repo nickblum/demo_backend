@@ -1,3 +1,7 @@
+"""
+This module contains the MessageProcessor class, 
+which is responsible for processing messages from the database.
+"""
 import asyncio
 import json
 from server.configuration import Settings
@@ -31,17 +35,17 @@ class MessageProcessor:
         try:
             payload = json.loads(message['payload'])
             processed_data = self.process_payload(payload)
-            
+
             # Send processed data via SSE
             await self.sse_handler.send_event(processed_data)
-            
+
             # Publish processed data to MQTT if needed
             if self.should_publish_mqtt(processed_data):
                 await self.mqtt_handler.publish(self.settings.MQTT_PUBLISH_TOPIC, processed_data)
-            
+
             # Mark message as processed
             await self.db.mark_message_as_processed(message['id'])
-            
+
             logger.info(f"Processed message {message['id']}")
         except json.JSONDecodeError:
             logger.error(f"Invalid JSON in message {message['id']}")
