@@ -1,9 +1,9 @@
+from typing import Optional
 from datetime import datetime
 import aiosqlite
 import asyncpg
 from server.configuration import Settings
 from server.logger import get_logger
-import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = get_logger(__name__)
@@ -135,18 +135,44 @@ class Database:
             """
             return await self.fetchrow(query, topic, payload, timestamp)
 
-    async def get_unprocessed_messages(self, limit: int = 100):
+    async def get_messages(
+        self, 
+        limit: int = 100, 
+        start_time: Optional[float] = None, 
+        end_time: Optional[float] = None
+    ):
+        query = """
+        SELECT id, topic, payload, timestamp
+        FROM mqtt_messages
+        WHERE 1=1
+        """
+
+        params = []
+
+        if start_time is not None:
+            query += " AND timestamp >= ?"
+            params.append(start_time)
+
+        if end_time is not None:
+            query += " AND timestamp <= ?"
+            params.append(end_time)
+
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+
+        if self.settings.DB_TYPE != 'sqlite':
+            query = query.replace('?', '$' + str(len(params)))
+
+        return await self.fetch(query, *params)
+
+    async def get_unprocessed_messages(self):
         query = """
         SELECT id, topic, payload, timestamp
         FROM mqtt_messages
         WHERE processed = FALSE
         ORDER BY timestamp ASC
-        LIMIT ?
         """
-        if self.settings.DB_TYPE != 'sqlite':
-            query = query.replace('?', '$1')
-
-        return await self.fetch(query, limit)
+        return await self.fetch(query)
 
     async def mark_message_as_processed(self, message_id: int):
         query = """

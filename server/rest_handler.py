@@ -2,11 +2,12 @@
 import json
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, ValidationError
-from server.configuration import Settings
+from server.configuration import Settings, get_settings
 from server.database import Database
 from server.mqtt_handler import MQTTHandler
+from server.services import PacketService
 
 router = APIRouter()
 
@@ -20,25 +21,30 @@ class RestHandler:
         self.db = db
         self.mqtt_handler = mqtt_handler
         self.router = APIRouter()
+        self.packet_service = PacketService(db, mqtt_handler)
         self.setup_routes()
 
     def setup_routes(self):
         @self.router.post("/api/v1/packets", status_code=201)
         async def submit_packet(packet: Packet):
+            """
+            Submit a new packet.
+
+            This endpoint accepts a packet with a device_id and command,
+            stores it in the database, and publishes it to MQTT.
+
+            Args:
+                packet (Packet): The packet to be submitted.
+
+            Returns:
+                dict: A dictionary containing a success message and the ID of the submitted packet.
+
+            Raises:
+                HTTPException: If there's a validation error or any other exception occurs.
+            """
             try:
-                # Validate packet against schema
-                packet_dict = packet.dict()
-
-                # Store in database
-                message_id = await self.db.insert_mqtt_message(
-                    self.settings.MQTT_PUBLISH_TOPIC,
-                    json.dumps(packet_dict)
-                )
-
-                # Publish to MQTT
-                await self.mqtt_handler.publish(self.settings.MQTT_PUBLISH_TOPIC, packet_dict)
-
-                return {"message": "Packet submitted successfully", "id": message_id}
+                result = await self.packet_service.submit_packet(packet.dict())
+                return {"message": "Packet submitted successfully", "id": result["id"]}
             except ValidationError as e:
                 raise HTTPException(status_code=400, detail=str(e))
             except Exception as e:
@@ -46,15 +52,32 @@ class RestHandler:
 
         @self.router.get("/ping")
         async def ping():
+            """
+            Ping endpoint to check if the server is running.
+
+            Returns:
+                dict: A dictionary containing the status and current timestamp.
+            """
             return {
                 "status": "OK",
                 "timestamp": datetime.utcnow().isoformat()
             }
 
         @self.router.get("/rereadenv")
-        async def reread_env():
+        async def reread_env(settings: Settings = Depends(get_settings)):
+            """
+            Re-read environment variables.
+
+            This endpoint updates the application settings by re-reading the environment variables.
+
+            Returns:
+                dict: A dictionary containing a success message.
+
+            Raises:
+                HTTPException: If there's an error updating the environment variables.
+            """
             try:
-                self.settings = Settings()
+                self.settings = settings
                 return {"message": "Environment variables updated successfully"}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to update environment variables: {str(e)}")
@@ -67,31 +90,26 @@ class RestHandler:
             key: Optional[str] = None,
             value: Optional[str] = None
         ):
+            """
+            Get messages from the database.
+
+            This endpoint retrieves messages from the database based on the provided filters.
+
+            Args:
+                limit (int): The maximum number of messages to retrieve (default: 100, min: 1, max: 1000).
+                start_time (float, optional): The start timestamp for filtering messages.
+                end_time (float, optional): The end timestamp for filtering messages.
+                key (str, optional): The key to filter messages by in the payload.
+                value (str, optional): The value to filter messages by in the payload.
+
+            Returns:
+                dict: A dictionary containing the list of messages and the total count.
+
+            Raises:
+                HTTPException: If there's an error retrieving the messages.
+            """
             try:
-                query = """
-                SELECT id, topic, payload, timestamp
-                FROM mqtt_messages
-                WHERE 1=1
-                """
-                params = []
-
-                if start_time is not None:
-                    query += " AND timestamp >= $1"
-                    params.append(start_time)
-
-                if end_time is not None:
-                    query += f" AND timestamp <= ${len(params) + 1}"
-                    params.append(end_time)
-
-                if key is not None and value is not None:
-                    query += f" AND payload::jsonb ->> ${len(params) + 1} = ${len(params) + 2}"
-                    params.extend([key, value])
-
-                query += f" ORDER BY timestamp DESC LIMIT ${len(params) + 1}"
-                params.append(limit)
-
-                messages = await self.db.fetch(query, *params)
-
+                messages = await self.packet_service.get_messages(limit, start_time, end_time, key, value)
                 return {
                     "messages": [
                         {

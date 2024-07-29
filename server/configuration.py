@@ -11,7 +11,7 @@ current_dir = Path(__file__).resolve().parent
 env_path = current_dir.parent / '.env'
 
 # Load the .env file
-load_dotenv(dotenv_path=env_path)
+load_dotenv(dotenv_path=env_path, override=True)
 
 class Settings(BaseSettings):
     # Server settings

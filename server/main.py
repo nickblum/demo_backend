@@ -5,8 +5,11 @@ import sys
 import time
 import socket
 from watchgod import awatch
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 from server.configuration import Settings
 from server.mqtt_handler import MQTTHandler
@@ -15,6 +18,7 @@ from server.sse_handler import SSEHandler
 from server.message_processor import MessageProcessor
 from server.logger import setup_logger, get_logger
 from server.database import Database
+from server.error_handler import setup_error_handlers
 
 # Load configuration
 settings = Settings()
@@ -24,7 +28,13 @@ setup_logger()
 logger = get_logger(__name__)
 
 # Initialize FastAPI app
-app = FastAPI()
+app = FastAPI(
+    title="Thistle Server API",
+    description="API for the Thistle Server project",
+    version="1.0.0",
+    docs_url=None,
+    redoc_url=None,
+)
 
 # Add CORS middleware
 app.add_middleware(
@@ -34,6 +44,9 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+
+# Setup error handlers
+setup_error_handlers(app)
 
 # Initialize components
 db = Database(settings)
@@ -49,27 +62,57 @@ app.include_router(sse_handler.router)
 # Store background tasks
 background_tasks = []
 
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html(request: Request):
+    return HTMLResponse(
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@4/swagger-ui.css">
+            <title>Thistle Server API - Swagger UI</title>
+        </head>
+        <body>
+            <div id="swagger-ui"></div>
+            <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@4/swagger-ui-bundle.js"></script>
+            <script>
+                const ui = SwaggerUIBundle({
+                    url: '/openapi.json',
+                    dom_id: '#swagger-ui',
+                    presets: [
+                        SwaggerUIBundle.presets.apis,
+                        SwaggerUIBundle.SwaggerUIStandalonePreset
+                    ],
+                    layout: "BaseLayout",
+                    deepLinking: true
+                })
+            </script>
+        </body>
+        </html>
+        """
+    )
+
+@app.get("/openapi.json", include_in_schema=False)
+async def get_openapi_endpoint():
+    return get_openapi(
+        title="Thistle Server API",
+        version="1.0.0",
+        description="API for the Thistle Server project",
+        routes=app.routes,
+    )
+
 async def shutdown(signal, loop):
     """Cleanup tasks tied to the service's shutdown."""
     logger.info(f"Received exit signal {signal.name}...")
-    
-    try:
-        logger.info("Closing database connections")
-        await db.disconnect()
-    except Exception as e:
-        logger.error(f"Error closing database connections: {str(e)}")
-    
-    try:
-        logger.info("Closing MQTT connections")
-        await mqtt_handler.disconnect()
-    except Exception as e:
-        logger.error(f"Error closing MQTT connections: {str(e)}")
-    
-    try:
-        logger.info("Closing SSE connections")
-        await sse_handler.close_connections()
-    except Exception as e:
-        logger.error(f"Error closing SSE connections: {str(e)}")
+    logger.info("Closing database connections")
+    await db.disconnect()
+    logger.info("Closing MQTT connections")
+    await mqtt_handler.disconnect()
+    logger.info("Closing SSE connections")
+    await sse_handler.close_connections()
     
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     [task.cancel() for task in tasks]
@@ -82,14 +125,10 @@ async def shutdown(signal, loop):
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting up the server")
-    try:
-        await db.connect()
-        await mqtt_handler.connect()
-        background_tasks.append(asyncio.create_task(mqtt_handler.maintain_connection()))
-        background_tasks.append(asyncio.create_task(message_processor.process_messages()))
-    except Exception as e:
-        logger.error(f"Error during startup: {str(e)}")
-        raise
+    await db.connect()
+    await mqtt_handler.connect()
+    background_tasks.append(asyncio.create_task(mqtt_handler.maintain_connection()))
+    background_tasks.append(asyncio.create_task(message_processor.process_messages()))
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -126,20 +165,15 @@ def start_server():
     
     try:
         loop.run_until_complete(server.serve())
-    except Exception as e:
-        logger.error(f"Error running server: {str(e)}")
     finally:
         reload_task.cancel()
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
 
 async def watch_and_reload(loop, server):
-    try:
-        async for changes in awatch('server'):
-            logger.info(f"Detected changes in {changes}. Reloading...")
-            os.execv(sys.executable, [sys.executable] + sys.argv)
-    except Exception as e:
-        logger.error(f"Error in file watcher: {str(e)}")
+    async for changes in awatch('server'):
+        logger.info(f"Detected changes in {changes}. Reloading...")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
 if __name__ == "__main__":
     start_server()
