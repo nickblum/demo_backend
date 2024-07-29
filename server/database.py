@@ -3,6 +3,8 @@ import aiosqlite
 import asyncpg
 from server.configuration import Settings
 from server.logger import get_logger
+import asyncio
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = get_logger(__name__)
 
@@ -47,6 +49,7 @@ class Database:
                 await self.pool.close()
                 logger.info("PostgreSQL database connection pool closed")
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
     async def execute(self, query: str, *args):
         if self.settings.DB_TYPE == 'sqlite':
             if not self.sqlite_conn:
@@ -68,6 +71,7 @@ class Database:
                 logger.error(f"Error executing PostgreSQL database query: {e}")
                 raise
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
     async def fetch(self, query: str, *args):
         if self.settings.DB_TYPE == 'sqlite':
             if not self.sqlite_conn:
@@ -91,6 +95,7 @@ class Database:
                 logger.error(f"Error fetching data from PostgreSQL database: {e}")
                 raise
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
     async def fetchrow(self, query: str, *args):
         if self.settings.DB_TYPE == 'sqlite':
             if not self.sqlite_conn:
@@ -168,3 +173,48 @@ class Database:
             create_table_query = create_table_query.replace('REAL', 'DOUBLE PRECISION')
         await self.execute(create_table_query)
         logger.info("Database initialized")
+
+    async def health_check(self):
+        try:
+            if self.settings.DB_TYPE == 'sqlite':
+                await self.fetchrow("SELECT 1")
+            else:
+                async with self.pool.acquire() as conn:
+                    await conn.fetchrow("SELECT 1")
+            return True
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            return False
+
+    async def reconnect(self):
+        logger.info("Attempting to reconnect to the database...")
+        await self.disconnect()
+        await self.connect()
+        logger.info("Database reconnection successful")
+
+    async def execute_with_reconnect(self, query: str, *args):
+        try:
+            return await self.execute(query, *args)
+        except Exception as e:
+            logger.error(f"Database operation failed: {e}")
+            if not await self.health_check():
+                await self.reconnect()
+            return await self.execute(query, *args)
+
+    async def fetch_with_reconnect(self, query: str, *args):
+        try:
+            return await self.fetch(query, *args)
+        except Exception as e:
+            logger.error(f"Database operation failed: {e}")
+            if not await self.health_check():
+                await self.reconnect()
+            return await self.fetch(query, *args)
+
+    async def fetchrow_with_reconnect(self, query: str, *args):
+        try:
+            return await self.fetchrow(query, *args)
+        except Exception as e:
+            logger.error(f"Database operation failed: {e}")
+            if not await self.health_check():
+                await self.reconnect()
+            return await self.fetchrow(query, *args)

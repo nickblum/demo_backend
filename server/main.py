@@ -13,14 +13,15 @@ from server.mqtt_handler import MQTTHandler
 from server.rest_handler import RestHandler
 from server.sse_handler import SSEHandler
 from server.message_processor import MessageProcessor
-from server.logger import setup_logger
+from server.logger import setup_logger, get_logger
 from server.database import Database
 
 # Load configuration
 settings = Settings()
 
 # Setup logging
-logger = setup_logger()
+setup_logger()
+logger = get_logger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -51,12 +52,24 @@ background_tasks = []
 async def shutdown(signal, loop):
     """Cleanup tasks tied to the service's shutdown."""
     logger.info(f"Received exit signal {signal.name}...")
-    logger.info("Closing database connections")
-    await db.disconnect()
-    logger.info("Closing MQTT connections")
-    await mqtt_handler.disconnect()
-    logger.info("Closing SSE connections")
-    await sse_handler.close_connections()
+    
+    try:
+        logger.info("Closing database connections")
+        await db.disconnect()
+    except Exception as e:
+        logger.error(f"Error closing database connections: {str(e)}")
+    
+    try:
+        logger.info("Closing MQTT connections")
+        await mqtt_handler.disconnect()
+    except Exception as e:
+        logger.error(f"Error closing MQTT connections: {str(e)}")
+    
+    try:
+        logger.info("Closing SSE connections")
+        await sse_handler.close_connections()
+    except Exception as e:
+        logger.error(f"Error closing SSE connections: {str(e)}")
     
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     [task.cancel() for task in tasks]
@@ -69,15 +82,18 @@ async def shutdown(signal, loop):
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting up the server")
-    await db.connect()
-    await mqtt_handler.connect()
-    background_tasks.append(asyncio.create_task(mqtt_handler.maintain_connection()))
-    background_tasks.append(asyncio.create_task(message_processor.process_messages()))
+    try:
+        await db.connect()
+        await mqtt_handler.connect()
+        background_tasks.append(asyncio.create_task(mqtt_handler.maintain_connection()))
+        background_tasks.append(asyncio.create_task(message_processor.process_messages()))
+    except Exception as e:
+        logger.error(f"Error during startup: {str(e)}")
+        raise
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("FastAPI shutdown event triggered")
-
 
 def is_port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -110,15 +126,20 @@ def start_server():
     
     try:
         loop.run_until_complete(server.serve())
+    except Exception as e:
+        logger.error(f"Error running server: {str(e)}")
     finally:
         reload_task.cancel()
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
 
 async def watch_and_reload(loop, server):
-    async for changes in awatch('server'):
-        logger.info(f"Detected changes in {changes}. Reloading...")
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+    try:
+        async for changes in awatch('server'):
+            logger.info(f"Detected changes in {changes}. Reloading...")
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        logger.error(f"Error in file watcher: {str(e)}")
 
 if __name__ == "__main__":
     start_server()
