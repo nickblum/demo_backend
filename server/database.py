@@ -21,7 +21,7 @@ class Database:
                 await self.sqlite_conn.execute("PRAGMA journal_mode=WAL")
                 logger.info("SQLite database connection established")
             except Exception as e:
-                logger.error(f"Error connecting to SQLite database: {e}")
+                logger.error("Error connecting to SQLite database: %s", e)
                 raise
         else:  # PostgreSQL
             try:
@@ -36,7 +36,7 @@ class Database:
                 )
                 logger.info("PostgreSQL database connection pool created")
             except Exception as e:
-                logger.error(f"Error creating PostgreSQL database connection pool: {e}")
+                logger.error("Error creating PostgreSQL database connection pool: %s", e)
                 raise
 
     async def disconnect(self):
@@ -59,7 +59,7 @@ class Database:
                     await self.sqlite_conn.commit()
                     return cursor.rowcount
             except Exception as e:
-                logger.error(f"Error executing SQLite database query: {e}")
+                logger.error("Error executing SQLite database query: %s", e)
                 raise
         else:
             if not self.pool:
@@ -68,7 +68,7 @@ class Database:
                 async with self.pool.acquire() as conn:
                     return await conn.execute(query, *args)
             except Exception as e:
-                logger.error(f"Error executing PostgreSQL database query: {e}")
+                logger.error("Error executing PostgreSQL database query: %s", e)
                 raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
@@ -83,7 +83,7 @@ class Database:
                     dict_results = [dict(zip(columns, row)) for row in rows]
                     return dict_results
             except Exception as e:
-                logger.error(f"Error fetching data from SQLite database: {e}")
+                logger.error("Error fetching data from SQLite database: %s", e)
                 raise
         else:
             if not self.pool:
@@ -92,7 +92,7 @@ class Database:
                 async with self.pool.acquire() as conn:
                     return await conn.fetch(query, *args)
             except Exception as e:
-                logger.error(f"Error fetching data from PostgreSQL database: {e}")
+                logger.error("Error fetching data from PostgreSQL database: %s", e)
                 raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
@@ -102,9 +102,10 @@ class Database:
                 raise Exception("SQLite database connection not established")
             try:
                 async with self.sqlite_conn.execute(query, args) as cursor:
+                    logger.error("Error fetching row from SQLite database: %s", e)
                     return await cursor.fetchone()
             except Exception as e:
-                logger.error(f"Error fetching row from SQLite database: {e}")
+                logger.error("Error fetching row from SQLite database: %s", e)
                 raise
         else:
             if not self.pool:
@@ -113,7 +114,7 @@ class Database:
                 async with self.pool.acquire() as conn:
                     return await conn.fetchrow(query, *args)
             except Exception as e:
-                logger.error(f"Error fetching row from PostgreSQL database: {e}")
+                logger.error("Error fetching row from PostgreSQL database: %s", e)
                 raise
     
     async def insert_mqtt_message(self, topic: str, payload: str):
@@ -209,7 +210,7 @@ class Database:
                     await conn.fetchrow("SELECT 1")
             return True
         except Exception as e:
-            logger.error(f"Database health check failed: {e}")
+            logger.error("Database health check failed: %s", e)
             return False
 
     async def reconnect(self):
@@ -222,7 +223,7 @@ class Database:
         try:
             return await self.execute(query, *args)
         except Exception as e:
-            logger.error(f"Database operation failed: {e}")
+            logger.error("Database operation failed: %s", e)
             if not await self.health_check():
                 await self.reconnect()
             return await self.execute(query, *args)
@@ -231,7 +232,7 @@ class Database:
         try:
             return await self.fetch(query, *args)
         except Exception as e:
-            logger.error(f"Database operation failed: {e}")
+            logger.error("Database operation failed: %s", e)
             if not await self.health_check():
                 await self.reconnect()
             return await self.fetch(query, *args)
@@ -240,7 +241,7 @@ class Database:
         try:
             return await self.fetchrow(query, *args)
         except Exception as e:
-            logger.error(f"Database operation failed: {e}")
+            logger.error("Database operation failed: %s", e)
             if not await self.health_check():
                 await self.reconnect()
             return await self.fetchrow(query, *args)

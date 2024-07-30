@@ -42,7 +42,7 @@ class MQTTHandler:
                     await self.subscribe(self.settings.MQTT_SUBSCRIBE_TOPIC)
                     break
             except Exception as e:
-                logger.error(f"Failed to connect to MQTT broker: {e}")
+                logger.error("Failed to connect to MQTT broker: %s", e)
                 await asyncio.sleep(self.reconnect_interval)
                 self.reconnect_interval = min(self.reconnect_interval * 2, self.max_reconnect_interval)
 
@@ -50,11 +50,11 @@ class MQTTHandler:
         while True:
             try:
                 message = await asyncio.get_event_loop().run_in_executor(None, self.message_queue.get)
-                logger.info(f"Processing MQTT message: {message}")
+                logger.info("Processing MQTT message: %s", message)
                 topic, payload = message
                 await self.handle_message(topic, payload)
             except Exception as e:
-                logger.error(f"Error in message processing loop: {e}")
+                logger.error("Error in message processing loop: %s", e)
                 await asyncio.sleep(1)
 
     def on_connect(self, client, userdata, flags, rc):
@@ -63,7 +63,7 @@ class MQTTHandler:
             logger.info("Connected to MQTT broker")
             self.reconnect_flag.set()
         else:
-            logger.error(f"Failed to connect to MQTT broker with result code {rc}")
+            logger.error("Failed to connect to MQTT broker with result code %s", rc)
 
     def on_disconnect(self, client, userdata, rc):
         self.connected = False
@@ -89,14 +89,14 @@ class MQTTHandler:
         try:
             payload_str = payload.decode('utf-8')
             await self.db.insert_mqtt_message(topic, payload_str)
-            logger.info(f"Received and stored MQTT message: {topic}")
+            logger.info("Received and stored MQTT message: %s", topic)
         except Exception as e:
-            logger.error(f"Error handling MQTT message: {e}")
+            logger.error("Error handling MQTT message: %s", e)
 
     async def subscribe(self, topic: str):
         if self.connected:
             self.client.subscribe(topic)
-            logger.info(f"Subscribed to topic: {topic}")
+            logger.info("Subscribed to topic: %s", topic)
         else:
             logger.warning("Cannot subscribe: Not connected to MQTT broker")
 
@@ -105,9 +105,9 @@ class MQTTHandler:
             try:
                 json_payload = json.dumps(payload)
                 self.client.publish(topic, json_payload)
-                logger.info(f"Published message to topic: {topic}")
+                logger.info("Published message to topic: %s", topic)
             except Exception as e:
-                logger.error(f"Error publishing MQTT message: {e}")
+                logger.error("Error publishing MQTT message: %s", e)
         else:
             logger.warning("Cannot publish: Not connected to MQTT broker")
 

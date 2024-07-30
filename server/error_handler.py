@@ -10,7 +10,7 @@ class AppException(Exception):
         self.detail = detail
 
 async def app_exception_handler(request: Request, exc: AppException):
-    logger.error(f"AppException: {exc.detail}", extra={
+    logger.error("AppException: %s", exc.detail, extra={
         "status_code": exc.status_code,
         "path": request.url.path,
         "method": request.method,

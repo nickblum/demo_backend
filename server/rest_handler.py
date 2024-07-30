@@ -46,9 +46,9 @@ class RestHandler:
                 result = await self.packet_service.submit_packet(packet.dict())
                 return {"message": "Packet submitted successfully", "id": result["id"]}
             except ValidationError as e:
-                raise HTTPException(status_code=400, detail=str(e))
+                raise HTTPException(status_code=400, detail=str(e)) from e
             except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
+                raise HTTPException(status_code=500, detail=str(e)) from e
 
         @self.router.get("/ping")
         async def ping():
@@ -80,7 +80,7 @@ class RestHandler:
                 self.settings = settings
                 return {"message": "Environment variables updated successfully"}
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to update environment variables: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Failed to update environment variables: {str(e)}") from e
 
         @self.router.get("/api/v1/messages")
         async def get_messages(
@@ -122,4 +122,4 @@ class RestHandler:
                     "total_count": len(messages)
                 }
             except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
+                raise HTTPException(status_code=500, detail=str(e)) from e

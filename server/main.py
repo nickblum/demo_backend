@@ -106,18 +106,18 @@ async def get_openapi_endpoint():
 
 async def shutdown(signal, loop):
     """Cleanup tasks tied to the service's shutdown."""
-    logger.info(f"Received exit signal {signal.name}...")
+    logger.info("Received exit signal %s...", signal.name)
     logger.info("Closing database connections")
     await db.disconnect()
     logger.info("Closing MQTT connections")
     await mqtt_handler.disconnect()
     logger.info("Closing SSE connections")
     await sse_handler.close_connections()
-    
+
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     [task.cancel() for task in tasks]
-    
-    logger.info(f"Cancelling {len(tasks)} outstanding tasks")
+
+    logger.info("Cancelling %d outstanding tasks", len(tasks))
     await asyncio.gather(*tasks, return_exceptions=True)
     logger.info("Shutting down asyncio loop")
     loop.stop()
@@ -142,27 +142,27 @@ def start_server():
     retries = 5
     while retries > 0:
         if is_port_in_use(settings.PORT):
-            logger.warning(f"Port {settings.PORT} is in use. Waiting for it to be free...")
+            logger.warning("Port %d is in use. Waiting for it to be free...", settings.PORT)
             time.sleep(2)
             retries -= 1
         else:
             break
-    
+
     if retries == 0:
-        logger.error(f"Could not start server. Port {settings.PORT} is still in use after multiple attempts.")
+        logger.error("Could not start server. Port %d is still in use after multiple attempts.", settings.PORT)
         sys.exit(1)
 
     config = uvicorn.Config("server.main:app", host=settings.HOST, port=settings.PORT, reload=False)
     server = uvicorn.Server(config)
-    
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
+
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s, loop)))
     
     reload_task = loop.create_task(watch_and_reload(loop, server))
-    
+
     try:
         loop.run_until_complete(server.serve())
     finally:
@@ -172,7 +172,7 @@ def start_server():
 
 async def watch_and_reload(loop, server):
     async for changes in awatch('server'):
-        logger.info(f"Detected changes in {changes}. Reloading...")
+        logger.info("Detected changes in %s. Reloading...", changes)
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
 if __name__ == "__main__":

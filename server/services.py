@@ -23,7 +23,7 @@ class MessageService:
             await self.sse_handler.send_event(processed_data)
             await self.db.mark_message_as_processed(message['id'])
         except Exception as e:
-            logger.error(f"Error processing message: {str(e)}", extra={"message_id": message['id']})
+            logger.error("Error processing message: %s", str(e), extra={"message_id": message['id']})
 
     def process_payload(self, payload: str) -> dict:
         """Process the payload of a message."""

@@ -28,7 +28,7 @@ class MessageProcessor:
                     await self.process_message(message)
                 await asyncio.sleep(self.settings.MESSAGE_PROCESSING_INTERVAL)
             except Exception as e:
-                logger.error(f"Error in message processing loop: {e}")
+                logger.error("Error in message processing loop: %s", e)
                 await asyncio.sleep(5)  # Wait a bit before retrying
 
     async def process_message(self, message):
@@ -46,11 +46,11 @@ class MessageProcessor:
             # Mark message as processed
             await self.db.mark_message_as_processed(message['id'])
 
-            logger.info(f"Processed message {message['id']}")
+            logger.info("Processed message %s", message['id'])
         except json.JSONDecodeError:
-            logger.error(f"Invalid JSON in message {message['id']}")
+            logger.error("Invalid JSON in message %s", message['id'])
         except Exception as e:
-            logger.error(f"Error processing message {message['id']}: {e}")
+            logger.error("Error processing message %s: %s", message['id'], e)
 
     def process_payload(self, payload):
         # This is where you would implement your business logic
